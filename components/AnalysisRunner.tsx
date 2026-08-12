@@ -2,12 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import PoseOverlay, { type PoseOverlayHandle } from "@/components/PoseOverlay";
-import {
-  createPoseLandmarker,
-  detectPoseOnVideoFrame,
-  getPrimaryPose,
-  type PoseLandmarker,
-} from "@/lib/pose";
+import { createPoseLandmarker, detectPoseOnVideoFrame, getPrimaryPose } from "@/lib/pose";
 import { analyzeSquatSession, type AnalysisOutcome, type PoseFrame } from "@/lib/squatAnalysis";
 
 interface AnalysisRunnerProps {
@@ -17,6 +12,33 @@ interface AnalysisRunnerProps {
 }
 
 type Phase = "loading-model" | "processing" | "finishing";
+
+// Frames are sampled by seeking rather than by playing the video in real
+// time. Real-time playback (via requestVideoFrameCallback) races CPU-bound
+// inference against the video clock: whenever a frame takes longer to
+// process than the playback interval, frames get silently skipped, and
+// *which* frames get skipped depends on machine load and timing jitter.
+// That made rep counts and flagged checks vary between runs of the exact
+// same video. Seeking to each timestamp and waiting for it to land makes
+// every run process the same frames in the same order, regardless of how
+// fast the device is.
+const SAMPLE_FPS = 15;
+const SAMPLE_STEP_MS = 1000 / SAMPLE_FPS;
+
+function seekTo(video: HTMLVideoElement, timeSeconds: number): Promise<void> {
+  return new Promise((resolve) => {
+    if (video.currentTime === timeSeconds) {
+      resolve();
+      return;
+    }
+    const onSeeked = () => {
+      video.removeEventListener("seeked", onSeeked);
+      resolve();
+    };
+    video.addEventListener("seeked", onSeeked);
+    video.currentTime = timeSeconds;
+  });
+}
 
 export default function AnalysisRunner({ videoUrl, onComplete, onError }: AnalysisRunnerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -30,82 +52,59 @@ export default function AnalysisRunner({ videoUrl, onComplete, onError }: Analys
     if (!video) return;
 
     let cancelled = false;
-    let finished = false;
-    let rvfcHandle: number | null = null;
-    let rafHandle: number | null = null;
-    let landmarker: PoseLandmarker | null = null;
-    const frames: PoseFrame[] = [];
 
     const onLoadedMetadata = () => {
       setDims({ width: video.videoWidth || 640, height: video.videoHeight || 360 });
     };
-
-    const finish = () => {
-      if (finished) return;
-      finished = true;
-      setPhase("finishing");
-      landmarker?.close();
-      landmarker = null;
-      onComplete(analyzeSquatSession(frames));
-    };
-
     const onVideoError = () => {
       if (cancelled) return;
       onError("לא ניתן לטעון את קובץ הווידאו. ודאו שהקובץ תקין ונסו שוב.");
     };
-
     video.addEventListener("loadedmetadata", onLoadedMetadata);
-    video.addEventListener("ended", finish);
     video.addEventListener("error", onVideoError);
-
-    const processFrame = (mediaTimeSeconds: number) => {
-      if (cancelled || !landmarker || video.readyState < 2) return;
-      const timestampMs = mediaTimeSeconds * 1000;
-      const result = detectPoseOnVideoFrame(landmarker, video, timestampMs);
-      const pose = getPrimaryPose(result);
-      frames.push({ timestampMs, landmarks: pose });
-      overlayRef.current?.draw(pose);
-      if (video.duration > 0) {
-        setProgress(Math.min(1, mediaTimeSeconds / video.duration));
-      }
-    };
-
-    const supportsRvfc = typeof video.requestVideoFrameCallback === "function";
-
-    const rvfcLoop = (_now: number, metadata: VideoFrameCallbackMetadata) => {
-      if (cancelled) return;
-      processFrame(metadata.mediaTime);
-      if (!video.ended && !video.paused) {
-        rvfcHandle = video.requestVideoFrameCallback(rvfcLoop);
-      }
-    };
-
-    const rafLoop = () => {
-      if (cancelled || video.ended) return;
-      processFrame(video.currentTime);
-      rafHandle = requestAnimationFrame(rafLoop);
-    };
 
     (async () => {
       try {
-        landmarker = await createPoseLandmarker("VIDEO");
+        const landmarker = await createPoseLandmarker("VIDEO");
         if (cancelled) {
           landmarker.close();
           return;
         }
-        setPhase("processing");
-        if (supportsRvfc) {
-          rvfcHandle = video.requestVideoFrameCallback(rvfcLoop);
-        } else {
-          rafHandle = requestAnimationFrame(rafLoop);
+
+        try {
+          if (video.readyState < 1) {
+            await new Promise<void>((resolve) => {
+              video.addEventListener("loadedmetadata", () => resolve(), { once: true });
+            });
+          }
+          if (cancelled) return;
+
+          setPhase("processing");
+          const durationMs = video.duration * 1000;
+          const frames: PoseFrame[] = [];
+
+          for (let timestampMs = 0; timestampMs <= durationMs; timestampMs += SAMPLE_STEP_MS) {
+            if (cancelled) return;
+            await seekTo(video, timestampMs / 1000);
+            if (cancelled) return;
+
+            const result = detectPoseOnVideoFrame(landmarker, video, timestampMs);
+            const pose = getPrimaryPose(result);
+            frames.push({ timestampMs, landmarks: pose });
+            overlayRef.current?.draw(pose);
+            setProgress(durationMs > 0 ? Math.min(1, timestampMs / durationMs) : 1);
+          }
+
+          if (cancelled) return;
+          setPhase("finishing");
+          onComplete(analyzeSquatSession(frames));
+        } finally {
+          landmarker.close();
         }
-        await video.play();
       } catch (err) {
         console.error("AnalysisRunner error:", err);
         if (!cancelled) {
-          onError(
-            "לא ניתן היה לטעון את מנוע זיהוי התנועה. בדקו את החיבור לרשת ונסו שוב.",
-          );
+          onError("לא ניתן היה לטעון את מנוע זיהוי התנועה. בדקו את החיבור לרשת ונסו שוב.");
         }
       }
     })();
@@ -113,11 +112,7 @@ export default function AnalysisRunner({ videoUrl, onComplete, onError }: Analys
     return () => {
       cancelled = true;
       video.removeEventListener("loadedmetadata", onLoadedMetadata);
-      video.removeEventListener("ended", finish);
       video.removeEventListener("error", onVideoError);
-      if (rvfcHandle !== null) video.cancelVideoFrameCallback(rvfcHandle);
-      if (rafHandle !== null) cancelAnimationFrame(rafHandle);
-      landmarker?.close();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [videoUrl]);

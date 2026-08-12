@@ -259,9 +259,16 @@ export function analyzeSquatSession(frames: PoseFrame[]): AnalysisOutcome {
       f.landmarks[knee].y - f.landmarks[hip].y,
     ),
   );
-  const valgusRatios = usable.map((f) =>
+  // The depth axis (z) is the noisiest signal MediaPipe estimates from a
+  // single camera, and knee valgus is a small deviation right at the
+  // detection threshold. Smooth it like the knee angle so single-frame
+  // numerical jitter (e.g. from the CPU inference backend's floating-point
+  // reduction order, which is not bit-exact run to run) doesn't flip a rep
+  // between flagged/clean.
+  const rawValgusRatios = usable.map((f) =>
     depthDeviationRatio(f.landmarks[hip], f.landmarks[knee], f.landmarks[ankle]),
   );
+  const valgusRatios = movingAverage(rawValgusRatios, SMOOTHING_WINDOW);
 
   const repIndices = segmentReps(kneeAngles);
   if (repIndices.length === 0) {
