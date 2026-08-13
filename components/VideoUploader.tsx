@@ -100,7 +100,8 @@ export default function VideoUploader({ onVideoReady }: VideoUploaderProps) {
       <section className="rounded-xl border border-black/10 p-5 dark:border-white/15">
         <h3 className="mb-3 font-semibold">העלאת קובץ וידאו</h3>
         <p className="mb-3 text-sm text-foreground/70">
-          קליפ קצר (5-8 חזרות) של סקוואט, מצולם מהצד.
+          קליפ קצר (5-8 חזרות) של סקוואט, מצולם בזווית של כ-45 מעלות (בין חזית
+          לצד).
         </p>
         <input
           type="file"
@@ -120,8 +121,8 @@ export default function VideoUploader({ onVideoReady }: VideoUploaderProps) {
       <section className="rounded-xl border border-black/10 p-5 dark:border-white/15">
         <h3 className="mb-3 font-semibold">הקלטה במצלמה</h3>
         <p className="mb-3 text-sm text-foreground/70">
-          הציבו את המצלמה בצד, כך שהגוף כולו (מהראש ועד הרגליים) נראה בפריים
-          לאורך כל התנועה.
+          הציבו את המצלמה בזווית של כ-45 מעלות (בין חזית לצד), כך שהגוף כולו
+          (מהראש ועד הרגליים) נראה בפריים לאורך כל התנועה.
         </p>
 
         {cameraState === "idle" && (

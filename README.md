@@ -1,9 +1,9 @@
 # בדיקת סקוואט (Squat Check)
 
-MVP web app that analyzes a short (5-8 rep) side-view squat video and
-flags common technique issues. Everything runs client-side in the
-browser — no backend, no database, no auth, and the video never leaves
-the device.
+MVP web app that analyzes a short (5-8 rep) squat video, filmed from an
+angle (recommended ~45°, between front and side), and flags common
+technique issues. Everything runs client-side in the browser — no
+backend, no database, no auth, and the video never leaves the device.
 
 ## Stack
 
@@ -25,8 +25,10 @@ the device.
 4. **`lib/squatAnalysis.ts`** — turns the per-frame landmarks into rep
    segmentation (via knee-angle hysteresis) and three angle-based
    checks per rep:
-   - **Knee valgus** — does the knee deviate from the hip-ankle line
-     (along the camera's depth axis, since this is a side-view check)?
+   - **Knee valgus** — does the knee deviate from the hip-ankle line?
+     Estimated by combining the depth-axis and horizontal-axis deviation,
+     tuned for the recommended ~45° camera angle (see the comment above
+     `estimateInwardKneeDeviation`).
    - **Lower-back rounding** — does the shoulder-hip angle change
      significantly between the start of the rep and its bottom?
    - **Depth** — does the hip crease drop below knee height?

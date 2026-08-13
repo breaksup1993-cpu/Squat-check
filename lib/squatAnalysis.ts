@@ -55,7 +55,22 @@ const SQUAT_ENTRY_KNEE_ANGLE_DEG = 140;
 /** Minimum knee-angle drop from standing to bottom to count as a real rep (filters out noise/weight shifts). */
 const MIN_REP_ANGLE_DROP_DEG = 30;
 
-/** Knee deviation from the hip-ankle line (as a fraction of leg length) beyond which we flag valgus. */
+/**
+ * Knee deviation from the hip-ankle line (as a fraction of leg length)
+ * beyond which we flag valgus, measured by `estimateInwardKneeDeviation`
+ * below. This was already just a heuristic tuned by feel for the original
+ * side-view-only (z-only) formula, not a physically derived number - and
+ * the app now recommends filming at ~45° instead. Verified (via synthetic
+ * landmark data modeling a camera at 45°, run through this function
+ * directly - not part of this repo's checked-in code) that this formula
+ * and threshold still cleanly separate an obviously-clean rep (reads
+ * exactly 0) from an obviously-valgus one (reads well above this
+ * threshold), and correctly reject a pure-forward-knee-travel confound
+ * that a z-only formula would have wrongly flagged at 45°. TODO
+ * re-calibrate against real 45°-filmed video once available - this
+ * couldn't be derived more precisely than "clearly separates two
+ * synthetic extremes" without it.
+ */
 const KNEE_VALGUS_RATIO_THRESHOLD = 0.12;
 /** Torso-angle change (degrees) between rep start and rep bottom beyond which we flag back rounding. */
 const BACK_ROUNDING_ANGLE_THRESHOLD_DEG = 25;
@@ -96,13 +111,16 @@ function angleFromVertical(a: Point3, b: Point3): number {
 }
 
 /**
- * How far `p` deviates from the straight hip-ankle line, measured along the
- * camera's depth axis (z) at p's height, normalized by leg length. In a
- * side-on video, medial ("inward") knee collapse is primarily a depth-axis
- * motion, not a left-right one, since the camera looks along the body's
- * frontal plane.
+ * How far `p` deviates from the straight hip-ankle line along one axis
+ * ("x": left-right in the image, "z": depth from the camera) at p's height,
+ * normalized by leg length.
  */
-function depthDeviationRatio(hip: Point3, knee: Point3, ankle: Point3): number {
+function axisDeviationRatio(
+  hip: Point3,
+  knee: Point3,
+  ankle: Point3,
+  axis: "x" | "z",
+): number {
   const legLength = Math.hypot(
     ankle.x - hip.x,
     ankle.y - hip.y,
@@ -111,10 +129,45 @@ function depthDeviationRatio(hip: Point3, knee: Point3, ankle: Point3): number {
   if (legLength === 0) return 0;
   const span = ankle.y - hip.y;
   const t = span === 0 ? 0.5 : (knee.y - hip.y) / span;
-  const expectedZ = hip.z + t * (ankle.z - hip.z);
-  // Positive = knee sits deeper (farther from camera) than the hip-ankle
-  // line, i.e. drifting toward the body midline for the near/tracked leg.
-  return (knee.z - expectedZ) / legLength;
+  const expected = hip[axis] + t * (ankle[axis] - hip[axis]);
+  return (knee[axis] - expected) / legLength;
+}
+
+/**
+ * Estimated medial ("inward") knee deviation from the hip-ankle line, at
+ * the app's recommended ~45° camera angle (between a pure front view and a
+ * pure side view).
+ *
+ * At a pure side view, inward knee collapse is almost entirely a
+ * depth-axis (z) motion, while forward knee travel over the toes is almost
+ * entirely a left-right (x) motion in the image - the two don't mix, so
+ * reading z alone is a clean valgus signal (this was the original
+ * side-view-only design). At 45°, world-frame trigonometry shows *both*
+ * axes pick up a roughly equal mix of the two motions, so reading either
+ * axis alone at 45° would partly measure forward travel too (which is
+ * often normal, especially in a deep squat) and count it as inward
+ * collapse.
+ *
+ * Combining the two axes cancels that mix-up: for the near/tracked leg,
+ * summing the depth deviation with the *sign-adjusted* horizontal
+ * deviation (adjusted for which side is tracked, since a left-tracked vs
+ * right-tracked setup mirrors the camera's position relative to the body)
+ * reconstructs the pure medial-lateral deviation, at 45° specifically. This
+ * is exact only at exactly 45°; it degrades gracefully for camera angles
+ * somewhat off that target, but is a worse (more confounded) estimate than
+ * before if someone films close to a pure side view instead of following
+ * the 45° guidance.
+ */
+function estimateInwardKneeDeviation(
+  hip: Point3,
+  knee: Point3,
+  ankle: Point3,
+  side: Side,
+): number {
+  const depthDev = axisDeviationRatio(hip, knee, ankle, "z");
+  const horizontalDev = axisDeviationRatio(hip, knee, ankle, "x");
+  const signedHorizontalDev = side === "left" ? horizontalDev : -horizontalDev;
+  return (depthDev + signedHorizontalDev) / Math.SQRT2;
 }
 
 function movingAverage(values: number[], window: number): number[] {
@@ -266,7 +319,7 @@ export function analyzeSquatSession(frames: PoseFrame[]): AnalysisOutcome {
   // reduction order, which is not bit-exact run to run) doesn't flip a rep
   // between flagged/clean.
   const rawValgusRatios = usable.map((f) =>
-    depthDeviationRatio(f.landmarks[hip], f.landmarks[knee], f.landmarks[ankle]),
+    estimateInwardKneeDeviation(f.landmarks[hip], f.landmarks[knee], f.landmarks[ankle], side),
   );
   const valgusRatios = movingAverage(rawValgusRatios, SMOOTHING_WINDOW);
 

@@ -88,10 +88,11 @@ export function detectPoseOnVideoFrame(
 
 /**
  * A pose is only trustworthy enough to analyze if one full side (shoulder,
- * hip, knee, ankle) is clearly visible. This is a *side-view* squat video,
- * so the far side is normally partly occluded by the near leg/arm — we only
- * need the near side to run the checks (see `pickTrackedSide` in
- * squatAnalysis.ts, which picks whichever side is more visible).
+ * hip, knee, ankle) is clearly visible. This is a squat video filmed from
+ * an angle (recommended ~45°, between front and side), so the far side is
+ * normally partly occluded by the near leg/arm — we only need the near side
+ * to run the checks (see `pickTrackedSide` in squatAnalysis.ts, which picks
+ * whichever side is more visible).
  */
 const SIDE_LANDMARKS_FOR_ANALYSIS = [
   [POSE_LANDMARKS.LEFT_SHOULDER, POSE_LANDMARKS.LEFT_HIP, POSE_LANDMARKS.LEFT_KNEE, POSE_LANDMARKS.LEFT_ANKLE],
