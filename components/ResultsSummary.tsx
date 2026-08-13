@@ -6,7 +6,7 @@ interface ResultsSummaryProps {
   onRestart: () => void;
 }
 
-const CHECK_LABELS = ["ברך קורסת פנימה", "עיגול גב תחתון", "עומק"];
+const CHECK_LABELS = { knee: "ברך קורסת פנימה", back: "גב תחתון", depth: "עומק" };
 
 export default function ResultsSummary({ outcome, onRestart }: ResultsSummaryProps) {
   if (outcome.status === "no-pose") {
@@ -78,33 +78,22 @@ export default function ResultsSummary({ outcome, onRestart }: ResultsSummaryPro
         </ul>
       </div>
 
-      <div className="overflow-x-auto rounded-xl border border-black/10 dark:border-white/15">
-        <table className="w-full min-w-[420px] text-sm">
-          <thead>
-            <tr className="border-b border-black/10 bg-black/[0.03] dark:border-white/15 dark:bg-white/[0.05]">
-              <th className="p-3 text-start font-medium">חזרה</th>
-              <th className="p-3 text-center font-medium">{CHECK_LABELS[0]}</th>
-              <th className="p-3 text-center font-medium">{CHECK_LABELS[1]}</th>
-              <th className="p-3 text-center font-medium">{CHECK_LABELS[2]}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {result.reps.map((rep) => (
-              <tr key={rep.index} className="border-b border-black/5 last:border-0 dark:border-white/10">
-                <td className="p-3">#{rep.index}</td>
-                <td className="p-3 text-center">
-                  <CheckBadge flagged={rep.kneeValgus.flagged} />
-                </td>
-                <td className="p-3 text-center">
-                  <CheckBadge flagged={rep.backRounding.flagged} />
-                </td>
-                <td className="p-3 text-center">
-                  <CheckBadge flagged={rep.depth.flagged} />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      {/* Per-rep cards rather than a wide table: a 4-column table needs
+          horizontal scrolling on phone-width screens, and that scroll isn't
+          discoverable - on a real device the last column silently went
+          unseen. A 3-column grid inside a full-width card has no fixed
+          minimum width, so it always fits. */}
+      <div className="flex flex-col gap-3">
+        {result.reps.map((rep) => (
+          <div key={rep.index} className="rounded-xl border border-black/10 p-4 dark:border-white/15">
+            <p className="mb-3 text-sm font-semibold">חזרה #{rep.index}</p>
+            <div className="grid grid-cols-3 gap-2">
+              <CheckCell label={CHECK_LABELS.knee} flagged={rep.kneeValgus.flagged} />
+              <CheckCell label={CHECK_LABELS.back} flagged={rep.backRounding.flagged} />
+              <CheckCell label={CHECK_LABELS.depth} flagged={rep.depth.flagged} />
+            </div>
+          </div>
+        ))}
       </div>
 
       <button
@@ -118,17 +107,19 @@ export default function ResultsSummary({ outcome, onRestart }: ResultsSummaryPro
   );
 }
 
-function CheckBadge({ flagged }: { flagged: boolean }) {
-  if (flagged) {
-    return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-1 text-xs font-medium text-red-800 dark:bg-red-950 dark:text-red-300">
-        סומן
-      </span>
-    );
-  }
+function CheckCell({ label, flagged }: { label: string; flagged: boolean }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2.5 py-1 text-xs font-medium text-green-800 dark:bg-green-950 dark:text-green-300">
-      תקין
-    </span>
+    <div className="flex flex-col items-center gap-1.5 text-center">
+      <span className="text-xs text-foreground/70">{label}</span>
+      {flagged ? (
+        <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-1 text-xs font-medium text-red-800 dark:bg-red-950 dark:text-red-300">
+          סומן
+        </span>
+      ) : (
+        <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2.5 py-1 text-xs font-medium text-green-800 dark:bg-green-950 dark:text-green-300">
+          תקין
+        </span>
+      )}
+    </div>
   );
 }
