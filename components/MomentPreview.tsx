@@ -3,6 +3,7 @@
 import { forwardRef, useImperativeHandle, useRef, useState } from "react";
 import PoseOverlay, { type PoseOverlayHandle } from "@/components/PoseOverlay";
 import type { NormalizedLandmark } from "@/lib/pose";
+import { seekTo } from "@/lib/videoSeek";
 
 export interface MomentPreviewHandle {
   showMoment: (timestampMs: number, landmarks: NormalizedLandmark[] | null) => void;
@@ -10,37 +11,6 @@ export interface MomentPreviewHandle {
 
 interface MomentPreviewProps {
   videoUrl: string;
-}
-
-/**
- * Browsers snap currentTime to the nearest decodable frame, so a value we
- * just wrote back rarely compares exactly equal afterwards. Treat anything
- * within half a frame (at 30fps) as "already there" - writing currentTime
- * again in that case can leave us waiting forever for a `seeked` that the
- * browser never fires because it considers the position unchanged.
- */
-const SEEK_EPSILON_SECONDS = 1 / 60;
-
-/** Don't hang forever if `seeked` never arrives - draw whatever frame we have. */
-const SEEK_TIMEOUT_MS = 2000;
-
-function seekTo(video: HTMLVideoElement, targetSeconds: number): Promise<void> {
-  if (video.readyState >= 2 && Math.abs(video.currentTime - targetSeconds) < SEEK_EPSILON_SECONDS) {
-    return Promise.resolve();
-  }
-  return new Promise((resolve) => {
-    let settled = false;
-    const finish = () => {
-      if (settled) return;
-      settled = true;
-      video.removeEventListener("seeked", finish);
-      clearTimeout(timer);
-      resolve();
-    };
-    const timer = setTimeout(finish, SEEK_TIMEOUT_MS);
-    video.addEventListener("seeked", finish);
-    video.currentTime = targetSeconds;
-  });
 }
 
 function nextAnimationFrame(): Promise<void> {

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import PoseOverlay, { type PoseOverlayHandle } from "@/components/PoseOverlay";
 import { createPoseLandmarker, detectPoseOnVideoFrame, getPrimaryPose } from "@/lib/pose";
 import { analyzeSquatSession, type AnalysisOutcome, type PoseFrame } from "@/lib/squatAnalysis";
+import { seekTo } from "@/lib/videoSeek";
 
 interface AnalysisRunnerProps {
   videoUrl: string;
@@ -24,21 +25,6 @@ type Phase = "loading-model" | "processing" | "finishing";
 // fast the device is.
 const SAMPLE_FPS = 15;
 const SAMPLE_STEP_MS = 1000 / SAMPLE_FPS;
-
-function seekTo(video: HTMLVideoElement, timeSeconds: number): Promise<void> {
-  return new Promise((resolve) => {
-    if (video.currentTime === timeSeconds) {
-      resolve();
-      return;
-    }
-    const onSeeked = () => {
-      video.removeEventListener("seeked", onSeeked);
-      resolve();
-    };
-    video.addEventListener("seeked", onSeeked);
-    video.currentTime = timeSeconds;
-  });
-}
 
 export default function AnalysisRunner({ videoUrl, onComplete, onError }: AnalysisRunnerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
