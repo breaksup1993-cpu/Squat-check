@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import Disclaimer from "@/components/Disclaimer";
 import MomentPreview, { type MomentPreviewHandle } from "@/components/MomentPreview";
+import { COACHING_TIPS, COACHING_TIPS_DISCLAIMER } from "@/lib/coachingTips";
 import type { AnalysisOutcome, RepAnalysis } from "@/lib/squatAnalysis";
 
 interface ResultsSummaryProps {
@@ -90,6 +91,18 @@ function ResultsWithMoments({
     previewContainerRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
   }
 
+  const hasValgusFlag = result.reps.some((r) => r.kneeValgus.flagged);
+  const hasBackFlag = result.reps.some((r) => r.backRounding.flagged);
+  const hasDepthFlag = result.reps.some((r) => r.depth.flagged);
+  const anyFlag = hasValgusFlag || hasBackFlag || hasDepthFlag;
+  // result.checkSentences is always [knee valgus, back rounding, depth], in
+  // that fixed order (see buildCheckSentences in lib/squatAnalysis.ts).
+  const summaryItems = [
+    { sentence: result.checkSentences[0], flagged: hasValgusFlag, tip: COACHING_TIPS.kneeValgus },
+    { sentence: result.checkSentences[1], flagged: hasBackFlag, tip: COACHING_TIPS.backRounding },
+    { sentence: result.checkSentences[2], flagged: hasDepthFlag, tip: COACHING_TIPS.depth },
+  ];
+
   return (
     <div className="flex flex-col gap-6">
       <Disclaimer variant="compact" />
@@ -97,14 +110,24 @@ function ResultsWithMoments({
       <div className="rounded-xl border border-black/10 p-5 dark:border-white/15">
         <h2 className="mb-1 text-lg font-bold">סיכום</h2>
         <p className="mb-4 text-sm text-foreground/70">זוהו {result.repCount} חזרות</p>
-        <ul className="space-y-2">
-          {result.checkSentences.map((sentence) => (
-            <li key={sentence} className="flex gap-2 text-sm leading-relaxed">
-              <span aria-hidden>•</span>
-              <span>{sentence}</span>
+        <ul className="space-y-3">
+          {summaryItems.map(({ sentence, flagged, tip }) => (
+            <li key={sentence}>
+              <div className="flex gap-2 text-sm leading-relaxed">
+                <span aria-hidden>•</span>
+                <span>{sentence}</span>
+              </div>
+              {flagged && (
+                <p className="mt-1 pr-4 text-xs text-blue-700 dark:text-blue-300">
+                  <strong>טיפ:</strong> {tip}
+                </p>
+              )}
             </li>
           ))}
         </ul>
+        {anyFlag && (
+          <p className="mt-3 text-[11px] text-foreground/50">{COACHING_TIPS_DISCLAIMER}</p>
+        )}
       </div>
 
       {videoUrl && (
