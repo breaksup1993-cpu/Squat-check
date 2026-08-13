@@ -24,6 +24,8 @@ export interface RepAnalysis {
   kneeValgus: RepCheck;
   backRounding: RepCheck;
   depth: RepCheck;
+  /** The pose at bottomTimeMs, so the UI can show "this moment" without re-running detection. */
+  bottomLandmarks: NormalizedLandmark[] | null;
 }
 
 export interface SquatAnalysisResult {
@@ -348,6 +350,7 @@ export function analyzeSquatSession(frames: PoseFrame[]): AnalysisOutcome {
       kneeValgus: { flagged: maxValgus > KNEE_VALGUS_RATIO_THRESHOLD },
       backRounding: { flagged: backAngleChange > BACK_ROUNDING_ANGLE_THRESHOLD_DEG },
       depth: { flagged: depthGap < -DEPTH_TOLERANCE_RATIO },
+      bottomLandmarks: usable[bottomIdx].landmarks,
     };
   });
 

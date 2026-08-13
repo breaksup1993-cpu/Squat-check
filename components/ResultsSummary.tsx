@@ -1,14 +1,19 @@
+"use client";
+
+import { useRef, useState } from "react";
 import Disclaimer from "@/components/Disclaimer";
-import type { AnalysisOutcome } from "@/lib/squatAnalysis";
+import MomentPreview, { type MomentPreviewHandle } from "@/components/MomentPreview";
+import type { AnalysisOutcome, RepAnalysis } from "@/lib/squatAnalysis";
 
 interface ResultsSummaryProps {
   outcome: AnalysisOutcome;
+  videoUrl: string | null;
   onRestart: () => void;
 }
 
 const CHECK_LABELS = { knee: "ברך קורסת פנימה", back: "גב תחתון", depth: "עומק" };
 
-export default function ResultsSummary({ outcome, onRestart }: ResultsSummaryProps) {
+export default function ResultsSummary({ outcome, videoUrl, onRestart }: ResultsSummaryProps) {
   if (outcome.status === "no-pose") {
     return (
       <div className="flex flex-col gap-5">
@@ -62,6 +67,30 @@ export default function ResultsSummary({ outcome, onRestart }: ResultsSummaryPro
   const { result } = outcome;
 
   return (
+    <ResultsWithMoments result={result} videoUrl={videoUrl} onRestart={onRestart} />
+  );
+}
+
+function ResultsWithMoments({
+  result,
+  videoUrl,
+  onRestart,
+}: {
+  result: Extract<AnalysisOutcome, { status: "ok" }>["result"];
+  videoUrl: string | null;
+  onRestart: () => void;
+}) {
+  const previewRef = useRef<MomentPreviewHandle>(null);
+  const previewContainerRef = useRef<HTMLDivElement>(null);
+  const [activeRepIndex, setActiveRepIndex] = useState<number | null>(null);
+
+  function handleViewMoment(rep: RepAnalysis) {
+    setActiveRepIndex(rep.index);
+    previewRef.current?.showMoment(rep.bottomTimeMs, rep.bottomLandmarks);
+    previewContainerRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
+  return (
     <div className="flex flex-col gap-6">
       <Disclaimer variant="compact" />
 
@@ -78,6 +107,15 @@ export default function ResultsSummary({ outcome, onRestart }: ResultsSummaryPro
         </ul>
       </div>
 
+      {videoUrl && (
+        <div ref={previewContainerRef} className={activeRepIndex === null ? "hidden" : undefined}>
+          <p className="mb-2 text-sm font-semibold">
+            הרגע התחתון של חזרה #{activeRepIndex}
+          </p>
+          <MomentPreview ref={previewRef} videoUrl={videoUrl} />
+        </div>
+      )}
+
       {/* Per-rep cards rather than a wide table: a 4-column table needs
           horizontal scrolling on phone-width screens, and that scroll isn't
           discoverable - on a real device the last column silently went
@@ -88,9 +126,21 @@ export default function ResultsSummary({ outcome, onRestart }: ResultsSummaryPro
           <div key={rep.index} className="rounded-xl border border-black/10 p-4 dark:border-white/15">
             <p className="mb-3 text-sm font-semibold">חזרה #{rep.index}</p>
             <div className="grid grid-cols-3 gap-2">
-              <CheckCell label={CHECK_LABELS.knee} flagged={rep.kneeValgus.flagged} />
-              <CheckCell label={CHECK_LABELS.back} flagged={rep.backRounding.flagged} />
-              <CheckCell label={CHECK_LABELS.depth} flagged={rep.depth.flagged} />
+              <CheckCell
+                label={CHECK_LABELS.knee}
+                flagged={rep.kneeValgus.flagged}
+                onViewMoment={videoUrl ? () => handleViewMoment(rep) : undefined}
+              />
+              <CheckCell
+                label={CHECK_LABELS.back}
+                flagged={rep.backRounding.flagged}
+                onViewMoment={videoUrl ? () => handleViewMoment(rep) : undefined}
+              />
+              <CheckCell
+                label={CHECK_LABELS.depth}
+                flagged={rep.depth.flagged}
+                onViewMoment={videoUrl ? () => handleViewMoment(rep) : undefined}
+              />
             </div>
           </div>
         ))}
@@ -107,14 +157,33 @@ export default function ResultsSummary({ outcome, onRestart }: ResultsSummaryPro
   );
 }
 
-function CheckCell({ label, flagged }: { label: string; flagged: boolean }) {
+function CheckCell({
+  label,
+  flagged,
+  onViewMoment,
+}: {
+  label: string;
+  flagged: boolean;
+  onViewMoment?: () => void;
+}) {
   return (
     <div className="flex flex-col items-center gap-1.5 text-center">
       <span className="text-xs text-foreground/70">{label}</span>
       {flagged ? (
-        <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-1 text-xs font-medium text-red-800 dark:bg-red-950 dark:text-red-300">
-          סומן
-        </span>
+        <>
+          <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-1 text-xs font-medium text-red-800 dark:bg-red-950 dark:text-red-300">
+            סומן
+          </span>
+          {onViewMoment && (
+            <button
+              type="button"
+              onClick={onViewMoment}
+              className="text-[11px] text-blue-600 underline hover:text-blue-800 dark:text-blue-400"
+            >
+              צפה ברגע הזה
+            </button>
+          )}
+        </>
       ) : (
         <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2.5 py-1 text-xs font-medium text-green-800 dark:bg-green-950 dark:text-green-300">
           תקין
