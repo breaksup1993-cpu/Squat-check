@@ -29,6 +29,16 @@ export interface RepAnalysis {
   depth: RepCheck;
   /** The pose at bottomTimeMs, so the UI can show "this moment" without re-running detection. */
   bottomLandmarks: NormalizedLandmark[] | null;
+  /**
+   * Snapshot of the video at bottomTimeMs. Filled in by the caller after
+   * analysis - this module is DOM-free and can't produce it - so that the
+   * UI can show that exact frame without seeking a video element to it
+   * again. Re-seeking is what made the displayed frame disagree with the
+   * drawn skeleton: it happened on a different element, in a different
+   * decode state, which can resolve the same timestamp to a different
+   * frame.
+   */
+  bottomFrame: HTMLCanvasElement | null;
 }
 
 export interface SquatAnalysisResult {
@@ -383,6 +393,7 @@ export function analyzeSquatSession(frames: PoseFrame[]): AnalysisOutcome {
       backRounding: { flagged: backRoundingSeverity !== "ok", severity: backRoundingSeverity },
       depth: { flagged: depthSeverity !== "ok", severity: depthSeverity },
       bottomLandmarks: usable[bottomIdx].landmarks,
+      bottomFrame: null,
     };
   });
 

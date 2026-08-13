@@ -6,16 +6,13 @@ import { POSE_CONNECTIONS, type NormalizedLandmark } from "@/lib/pose";
 export interface PoseOverlayHandle {
   draw: (landmarks: NormalizedLandmark[] | null) => void;
   /**
-   * Like `draw`, but first paints a video frame into the canvas so the
-   * skeleton isn't drawn onto an empty/transparent background. For a
-   * *playing* video (AnalysisRunner's use case) the video element itself is
-   * already visible underneath the transparent overlay canvas, so `draw` is
-   * enough - but a paused, freshly-seeked video (MomentPreview's use case)
-   * isn't reliably painted by the browser at an arbitrary seek target
-   * (notably on Safari/iOS), so the frame has to be composited in
-   * ourselves.
+   * Like `draw`, but first paints `source` into the canvas so the skeleton
+   * isn't drawn onto an empty background. Used where there is no video
+   * element visible underneath to supply the picture - the results screen
+   * draws a snapshot captured during analysis. A null source falls back to
+   * skeleton only.
    */
-  drawFrame: (video: HTMLVideoElement, landmarks: NormalizedLandmark[] | null) => void;
+  drawFrame: (source: CanvasImageSource | null, landmarks: NormalizedLandmark[] | null) => void;
   clear: () => void;
 }
 
@@ -76,12 +73,12 @@ const PoseOverlay = forwardRef<PoseOverlayHandle, PoseOverlayProps>(
           if (!landmarks) return;
           drawSkeleton(ctx, canvas, landmarks);
         },
-        drawFrame(video, landmarks) {
+        drawFrame(source, landmarks) {
           const canvas = canvasRef.current;
           const ctx = canvas?.getContext("2d");
           if (!canvas || !ctx) return;
           ctx.clearRect(0, 0, canvas.width, canvas.height);
-          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          if (source) ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
           if (!landmarks) return;
           drawSkeleton(ctx, canvas, landmarks);
         },

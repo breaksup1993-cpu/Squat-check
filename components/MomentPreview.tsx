@@ -1,106 +1,71 @@
 "use client";
 
-import { forwardRef, useImperativeHandle, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import PoseOverlay, { type PoseOverlayHandle } from "@/components/PoseOverlay";
 import type { NormalizedLandmark } from "@/lib/pose";
-import { seekTo } from "@/lib/videoSeek";
 
 export interface MomentPreviewHandle {
-  showMoment: (timestampMs: number, landmarks: NormalizedLandmark[] | null) => void;
+  showMoment: (frame: HTMLCanvasElement | null, landmarks: NormalizedLandmark[] | null) => void;
 }
 
-interface MomentPreviewProps {
-  videoUrl: string;
+interface Moment {
+  frame: HTMLCanvasElement | null;
+  landmarks: NormalizedLandmark[] | null;
 }
 
-function nextAnimationFrame(): Promise<void> {
-  return new Promise((resolve) => requestAnimationFrame(() => resolve()));
-}
+const FALLBACK_DIMS = { width: 640, height: 360 };
 
 /**
- * A single video+skeleton preview, seekable to an arbitrary timestamp with
- * a pre-computed pose drawn on top (no re-running detection). Used by
- * "view this moment" links next to flagged checks in the results screen.
+ * Shows one already-captured moment: the video frame snapshotted during
+ * analysis with that frame's pose drawn over it.
+ *
+ * There is deliberately no <video> element here. An earlier version seeked
+ * a second video to the rep's timestamp on demand, which put the frame and
+ * the skeleton out of sync - that element had a different decode state from
+ * the one the analysis ran on, so the same timestamp could resolve to a
+ * different frame - and on Safari/iOS a never-played video would not paint
+ * at all. Drawing the snapshot taken at analysis time removes both problems
+ * by construction.
  */
-const MomentPreview = forwardRef<MomentPreviewHandle, MomentPreviewProps>(
-  function MomentPreview({ videoUrl }, ref) {
-    const videoRef = useRef<HTMLVideoElement>(null);
+const MomentPreview = forwardRef<MomentPreviewHandle, object>(
+  function MomentPreview(_props, ref) {
     const overlayRef = useRef<PoseOverlayHandle>(null);
-    const primedRef = useRef(false);
-    // Bumped per showMoment call; an in-flight call whose generation is
-    // stale stops before painting, so clicking several moments quickly
-    // can't leave an earlier one's pose on screen.
-    const generationRef = useRef(0);
-    const [dims, setDims] = useState({ width: 640, height: 360 });
+    const [moment, setMoment] = useState<Moment | null>(null);
 
     useImperativeHandle(
       ref,
       () => ({
-        showMoment(timestampMs, landmarks) {
-          const video = videoRef.current;
-          if (!video) return;
-          const generation = ++generationRef.current;
-
-          void (async () => {
-            // iOS Safari treats a video that has never started playback as
-            // "not activated": the element paints black on screen, and in
-            // some versions has no frame available to drawImage either.
-            // One play/pause activates it for good. A muted, playsInline
-            // video may autoplay without a gesture, and this runs from a
-            // click anyway, so the play() should be permitted - but a
-            // rejection isn't fatal, so it's only best-effort.
-            if (!primedRef.current) {
-              primedRef.current = true;
-              try {
-                await video.play();
-              } catch {
-                // Ignored: seek + drawImage may still work without it.
-              }
-              video.pause();
-            }
-            if (generation !== generationRef.current) return;
-
-            await seekTo(video, timestampMs / 1000);
-            if (generation !== generationRef.current) return;
-
-            // `seeked` can fire a beat before the decoded frame is actually
-            // presented; one frame of slack avoids compositing the previous
-            // frame instead of the requested one.
-            await nextAnimationFrame();
-            if (generation !== generationRef.current) return;
-
-            // Composite the frame into the canvas rather than relying on the
-            // <video> element underneath to have painted it - see the
-            // iOS note above, and drawFrame's own comment in PoseOverlay.
-            overlayRef.current?.drawFrame(video, landmarks);
-          })();
+        showMoment(frame, landmarks) {
+          // Recorded as state rather than painted right here: a frame of a
+          // different size resizes the canvas, and resizing a canvas clears
+          // it. Painting from an effect instead guarantees it happens after
+          // PoseOverlay's own resize effect, since child effects run before
+          // parent effects.
+          setMoment({ frame, landmarks });
         },
       }),
       [],
     );
+
+    const dims = moment?.frame
+      ? { width: moment.frame.width, height: moment.frame.height }
+      : FALLBACK_DIMS;
+
+    useEffect(() => {
+      if (!moment) return;
+      overlayRef.current?.drawFrame(moment.frame, moment.landmarks);
+    }, [moment]);
 
     return (
       <div
         className="relative mx-auto max-w-md overflow-hidden rounded-xl bg-black"
         style={{ aspectRatio: `${dims.width} / ${dims.height}` }}
       >
-        <video
-          ref={videoRef}
-          src={videoUrl}
-          muted
-          playsInline
-          preload="auto"
-          onLoadedMetadata={(e) => {
-            const v = e.currentTarget;
-            setDims({ width: v.videoWidth || 640, height: v.videoHeight || 360 });
-          }}
-          className="h-full w-full object-contain"
-        />
         <PoseOverlay
           ref={overlayRef}
           width={dims.width}
           height={dims.height}
-          className="pointer-events-none absolute inset-0 h-full w-full"
+          className="h-full w-full"
         />
       </div>
     );

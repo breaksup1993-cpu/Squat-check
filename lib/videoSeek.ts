@@ -23,6 +23,14 @@ const SEEK_EPSILON_SECONDS = 1 / 60;
 /** Give up waiting for `seeked` and let the caller proceed with whatever frame is current. */
 const SEEK_TIMEOUT_MS = 2000;
 
+/**
+ * `seeked` can fire a beat before the decoded frame is actually presented;
+ * one frame of slack avoids reading the previous frame back out.
+ */
+export function waitForNextFrame(): Promise<void> {
+  return new Promise((resolve) => requestAnimationFrame(() => resolve()));
+}
+
 export function seekTo(video: HTMLVideoElement, targetSeconds: number): Promise<void> {
   if (video.readyState >= 2 && Math.abs(video.currentTime - targetSeconds) < SEEK_EPSILON_SECONDS) {
     return Promise.resolve();

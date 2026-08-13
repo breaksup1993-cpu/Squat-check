@@ -8,13 +8,12 @@ import type { AnalysisOutcome, RepAnalysis, Severity } from "@/lib/squatAnalysis
 
 interface ResultsSummaryProps {
   outcome: AnalysisOutcome;
-  videoUrl: string | null;
   onRestart: () => void;
 }
 
 const CHECK_LABELS = { knee: "ברך קורסת פנימה", back: "גב תחתון", depth: "עומק" };
 
-export default function ResultsSummary({ outcome, videoUrl, onRestart }: ResultsSummaryProps) {
+export default function ResultsSummary({ outcome, onRestart }: ResultsSummaryProps) {
   if (outcome.status === "no-pose") {
     return (
       <div className="flex flex-col gap-5">
@@ -67,18 +66,14 @@ export default function ResultsSummary({ outcome, videoUrl, onRestart }: Results
 
   const { result } = outcome;
 
-  return (
-    <ResultsWithMoments result={result} videoUrl={videoUrl} onRestart={onRestart} />
-  );
+  return <ResultsWithMoments result={result} onRestart={onRestart} />;
 }
 
 function ResultsWithMoments({
   result,
-  videoUrl,
   onRestart,
 }: {
   result: Extract<AnalysisOutcome, { status: "ok" }>["result"];
-  videoUrl: string | null;
   onRestart: () => void;
 }) {
   const previewRef = useRef<MomentPreviewHandle>(null);
@@ -87,9 +82,11 @@ function ResultsWithMoments({
 
   function handleViewMoment(rep: RepAnalysis) {
     setActiveRepIndex(rep.index);
-    previewRef.current?.showMoment(rep.bottomTimeMs, rep.bottomLandmarks);
+    previewRef.current?.showMoment(rep.bottomFrame, rep.bottomLandmarks);
     previewContainerRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
   }
+
+  const canShowMoments = result.reps.some((rep) => rep.bottomFrame);
 
   const hasValgusFlag = result.reps.some((r) => r.kneeValgus.flagged);
   const hasBackFlag = result.reps.some((r) => r.backRounding.flagged);
@@ -130,12 +127,12 @@ function ResultsWithMoments({
         )}
       </div>
 
-      {videoUrl && (
+      {canShowMoments && (
         <div ref={previewContainerRef} className={activeRepIndex === null ? "hidden" : undefined}>
           <p className="mb-2 text-sm font-semibold">
             הרגע התחתון של חזרה #{activeRepIndex}
           </p>
-          <MomentPreview ref={previewRef} videoUrl={videoUrl} />
+          <MomentPreview ref={previewRef} />
         </div>
       )}
 
@@ -152,17 +149,17 @@ function ResultsWithMoments({
               <CheckCell
                 label={CHECK_LABELS.knee}
                 severity={rep.kneeValgus.severity}
-                onViewMoment={videoUrl ? () => handleViewMoment(rep) : undefined}
+                onViewMoment={rep.bottomFrame ? () => handleViewMoment(rep) : undefined}
               />
               <CheckCell
                 label={CHECK_LABELS.back}
                 severity={rep.backRounding.severity}
-                onViewMoment={videoUrl ? () => handleViewMoment(rep) : undefined}
+                onViewMoment={rep.bottomFrame ? () => handleViewMoment(rep) : undefined}
               />
               <CheckCell
                 label={CHECK_LABELS.depth}
                 severity={rep.depth.severity}
-                onViewMoment={videoUrl ? () => handleViewMoment(rep) : undefined}
+                onViewMoment={rep.bottomFrame ? () => handleViewMoment(rep) : undefined}
               />
             </div>
           </div>

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import PoseOverlay, { type PoseOverlayHandle } from "@/components/PoseOverlay";
 import { createPoseLandmarker, detectPoseOnVideoFrame, getPrimaryPose } from "@/lib/pose";
 import { analyzeSquatSession, type AnalysisOutcome, type PoseFrame } from "@/lib/squatAnalysis";
-import { seekTo } from "@/lib/videoSeek";
+import { seekTo, waitForNextFrame } from "@/lib/videoSeek";
 
 interface AnalysisRunnerProps {
   videoUrl: string;
@@ -25,6 +25,28 @@ type Phase = "loading-model" | "processing" | "finishing";
 // fast the device is.
 const SAMPLE_FPS = 15;
 const SAMPLE_STEP_MS = 1000 / SAMPLE_FPS;
+
+/**
+ * Longest edge of a captured rep-bottom snapshot. The preview renders at
+ * roughly 450 CSS px wide, so this stays sharp on a 3x phone screen while
+ * keeping each snapshot to about a megabyte.
+ */
+const MAX_SNAPSHOT_EDGE = 720;
+
+function captureFrame(video: HTMLVideoElement): HTMLCanvasElement | null {
+  const sourceWidth = video.videoWidth;
+  const sourceHeight = video.videoHeight;
+  if (!sourceWidth || !sourceHeight) return null;
+
+  const scale = Math.min(1, MAX_SNAPSHOT_EDGE / Math.max(sourceWidth, sourceHeight));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(sourceWidth * scale);
+  canvas.height = Math.round(sourceHeight * scale);
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  return canvas;
+}
 
 export default function AnalysisRunner({ videoUrl, onComplete, onError }: AnalysisRunnerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -83,7 +105,26 @@ export default function AnalysisRunner({ videoUrl, onComplete, onError }: Analys
 
           if (cancelled) return;
           setPhase("finishing");
-          onComplete(analyzeSquatSession(frames));
+
+          const outcome = analyzeSquatSession(frames);
+          // Capture each rep's bottom frame now, while this same video
+          // element is still mounted and fully buffered, so the results
+          // screen can show that frame without ever seeking again. Only the
+          // rep bottoms are captured, not every sampled frame: a real 5-8
+          // rep clip samples 200-400 frames, which would run to well over
+          // 100MB of retained bitmaps even downscaled.
+          if (outcome.status === "ok") {
+            for (const rep of outcome.result.reps) {
+              if (cancelled) return;
+              await seekTo(video, rep.bottomTimeMs / 1000);
+              if (cancelled) return;
+              await waitForNextFrame();
+              if (cancelled) return;
+              rep.bottomFrame = captureFrame(video);
+            }
+          }
+
+          onComplete(outcome);
         } finally {
           landmarker.close();
         }

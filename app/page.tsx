@@ -98,7 +98,7 @@ export default function Home() {
       )}
 
       {step === "results" && outcome && (
-        <ResultsSummary outcome={outcome} videoUrl={videoUrl} onRestart={handleRestart} />
+        <ResultsSummary outcome={outcome} onRestart={handleRestart} />
       )}
     </main>
   );
