@@ -5,6 +5,17 @@ import { POSE_CONNECTIONS, type NormalizedLandmark } from "@/lib/pose";
 
 export interface PoseOverlayHandle {
   draw: (landmarks: NormalizedLandmark[] | null) => void;
+  /**
+   * Like `draw`, but first paints a video frame into the canvas so the
+   * skeleton isn't drawn onto an empty/transparent background. For a
+   * *playing* video (AnalysisRunner's use case) the video element itself is
+   * already visible underneath the transparent overlay canvas, so `draw` is
+   * enough - but a paused, freshly-seeked video (MomentPreview's use case)
+   * isn't reliably painted by the browser at an arbitrary seek target
+   * (notably on Safari/iOS), so the frame has to be composited in
+   * ourselves.
+   */
+  drawFrame: (video: HTMLVideoElement, landmarks: NormalizedLandmark[] | null) => void;
   clear: () => void;
 }
 
@@ -15,6 +26,35 @@ interface PoseOverlayProps {
 }
 
 const MIN_VISIBILITY_TO_DRAW = 0.3;
+
+function drawSkeleton(
+  ctx: CanvasRenderingContext2D,
+  canvas: HTMLCanvasElement,
+  landmarks: NormalizedLandmark[],
+) {
+  const lineWidth = Math.max(2, canvas.width * 0.006);
+  ctx.lineWidth = lineWidth;
+  ctx.strokeStyle = "rgba(34, 197, 94, 0.9)";
+  ctx.beginPath();
+  for (const { start, end } of POSE_CONNECTIONS) {
+    const a = landmarks[start];
+    const b = landmarks[end];
+    if (!a || !b) continue;
+    if (a.visibility < MIN_VISIBILITY_TO_DRAW || b.visibility < MIN_VISIBILITY_TO_DRAW) continue;
+    ctx.moveTo(a.x * canvas.width, a.y * canvas.height);
+    ctx.lineTo(b.x * canvas.width, b.y * canvas.height);
+  }
+  ctx.stroke();
+
+  const pointRadius = Math.max(2.5, canvas.width * 0.007);
+  ctx.fillStyle = "rgba(250, 204, 21, 0.95)";
+  for (const lm of landmarks) {
+    if (lm.visibility < MIN_VISIBILITY_TO_DRAW) continue;
+    ctx.beginPath();
+    ctx.arc(lm.x * canvas.width, lm.y * canvas.height, pointRadius, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
 
 /**
  * Canvas overlay that draws the pose skeleton on top of a video element.
@@ -34,29 +74,16 @@ const PoseOverlay = forwardRef<PoseOverlayHandle, PoseOverlayProps>(
           if (!canvas || !ctx) return;
           ctx.clearRect(0, 0, canvas.width, canvas.height);
           if (!landmarks) return;
-
-          const lineWidth = Math.max(2, canvas.width * 0.006);
-          ctx.lineWidth = lineWidth;
-          ctx.strokeStyle = "rgba(34, 197, 94, 0.9)";
-          ctx.beginPath();
-          for (const { start, end } of POSE_CONNECTIONS) {
-            const a = landmarks[start];
-            const b = landmarks[end];
-            if (!a || !b) continue;
-            if (a.visibility < MIN_VISIBILITY_TO_DRAW || b.visibility < MIN_VISIBILITY_TO_DRAW) continue;
-            ctx.moveTo(a.x * canvas.width, a.y * canvas.height);
-            ctx.lineTo(b.x * canvas.width, b.y * canvas.height);
-          }
-          ctx.stroke();
-
-          const pointRadius = Math.max(2.5, canvas.width * 0.007);
-          ctx.fillStyle = "rgba(250, 204, 21, 0.95)";
-          for (const lm of landmarks) {
-            if (lm.visibility < MIN_VISIBILITY_TO_DRAW) continue;
-            ctx.beginPath();
-            ctx.arc(lm.x * canvas.width, lm.y * canvas.height, pointRadius, 0, Math.PI * 2);
-            ctx.fill();
-          }
+          drawSkeleton(ctx, canvas, landmarks);
+        },
+        drawFrame(video, landmarks) {
+          const canvas = canvasRef.current;
+          const ctx = canvas?.getContext("2d");
+          if (!canvas || !ctx) return;
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          if (!landmarks) return;
+          drawSkeleton(ctx, canvas, landmarks);
         },
         clear() {
           const canvas = canvasRef.current;

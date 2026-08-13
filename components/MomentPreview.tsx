@@ -21,6 +21,7 @@ const MomentPreview = forwardRef<MomentPreviewHandle, MomentPreviewProps>(
   function MomentPreview({ videoUrl }, ref) {
     const videoRef = useRef<HTMLVideoElement>(null);
     const overlayRef = useRef<PoseOverlayHandle>(null);
+    const pendingSeekHandlerRef = useRef<(() => void) | null>(null);
     const [dims, setDims] = useState({ width: 640, height: 360 });
 
     useImperativeHandle(
@@ -30,16 +31,36 @@ const MomentPreview = forwardRef<MomentPreviewHandle, MomentPreviewProps>(
           const video = videoRef.current;
           if (!video) return;
           const targetSeconds = timestampMs / 1000;
+
+          // A seek requested while a previous one is still pending would
+          // otherwise leave a stale listener around that could paint the
+          // wrong (earlier) moment's landmarks if it happens to fire.
+          if (pendingSeekHandlerRef.current) {
+            video.removeEventListener("seeked", pendingSeekHandlerRef.current);
+            pendingSeekHandlerRef.current = null;
+          }
+
+          const paint = () => overlayRef.current?.drawFrame(video, landmarks);
+
+          // Composite from the video element's own decoded frame via
+          // drawImage rather than relying on the <video> element to have
+          // visibly painted that frame on screen - a paused video freshly
+          // seeked to an arbitrary timestamp isn't reliably painted by the
+          // browser (notably on Safari/iOS), but drawImage reads the
+          // decoded buffer directly regardless of on-screen paint state.
+          if (video.readyState >= 2 && video.currentTime === targetSeconds) {
+            paint();
+            return;
+          }
+
           const onSeeked = () => {
             video.removeEventListener("seeked", onSeeked);
-            overlayRef.current?.draw(landmarks);
+            pendingSeekHandlerRef.current = null;
+            paint();
           };
-          if (video.currentTime === targetSeconds) {
-            overlayRef.current?.draw(landmarks);
-          } else {
-            video.addEventListener("seeked", onSeeked);
-            video.currentTime = targetSeconds;
-          }
+          pendingSeekHandlerRef.current = onSeeked;
+          video.addEventListener("seeked", onSeeked);
+          video.currentTime = targetSeconds;
         },
       }),
       [],
