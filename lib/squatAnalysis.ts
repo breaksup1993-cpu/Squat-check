@@ -12,8 +12,11 @@ export interface PoseFrame {
 
 export type Side = "left" | "right";
 
+export type Severity = "ok" | "mild" | "significant";
+
 export interface RepCheck {
   flagged: boolean;
+  severity: Severity;
 }
 
 export interface RepAnalysis {
@@ -81,6 +84,27 @@ const DEPTH_TOLERANCE_RATIO = 0.05;
 
 /** Moving-average window (frames) used to smooth landmark jitter before analysis. */
 const SMOOTHING_WINDOW = 5;
+
+/**
+ * How far past a check's threshold a measurement has to be to count as
+ * "significant" rather than "mild", as a multiple of that threshold.
+ * TODO this is a rough starting line, not calibrated against real video -
+ * revisit once real flagged/borderline footage is available to check
+ * whether 1.5x actually separates what a person would call "mild" from
+ * "significant".
+ */
+const SEVERITY_MULTIPLIER = 1.5;
+
+/**
+ * `measuredExcess` and `threshold` must be on the same scale and same sign
+ * convention as the check's own flagging test (i.e. `measuredExcess >
+ * threshold` should be equivalent to that check's `flagged` condition).
+ */
+function severityFromExcess(measuredExcess: number, threshold: number): Severity {
+  if (measuredExcess <= threshold) return "ok";
+  if (measuredExcess <= threshold * SEVERITY_MULTIPLIER) return "mild";
+  return "significant";
+}
 
 // --- Geometry helpers -------------------------------------------------------
 
@@ -341,15 +365,23 @@ export function analyzeSquatSession(frames: PoseFrame[]): AnalysisOutcome {
 
     const depthGap = (hipY[bottomIdx] - kneeY[bottomIdx]) / (thighLength[bottomIdx] || 1);
     const backAngleChange = Math.abs(torsoAngles[bottomIdx] - torsoAngles[startIdx]);
+    // depthGap's flagging test is depthGap < -DEPTH_TOLERANCE_RATIO, i.e. it
+    // gets *more negative* the worse it is - so -depthGap is the excess on
+    // the same positive, threshold-comparable scale as the other two checks.
+    const depthExcess = -depthGap;
+
+    const kneeValgusSeverity = severityFromExcess(maxValgus, KNEE_VALGUS_RATIO_THRESHOLD);
+    const backRoundingSeverity = severityFromExcess(backAngleChange, BACK_ROUNDING_ANGLE_THRESHOLD_DEG);
+    const depthSeverity = severityFromExcess(depthExcess, DEPTH_TOLERANCE_RATIO);
 
     return {
       index: i + 1,
       startTimeMs: timestamps[startIdx],
       bottomTimeMs: timestamps[bottomIdx],
       endTimeMs: timestamps[endIdx],
-      kneeValgus: { flagged: maxValgus > KNEE_VALGUS_RATIO_THRESHOLD },
-      backRounding: { flagged: backAngleChange > BACK_ROUNDING_ANGLE_THRESHOLD_DEG },
-      depth: { flagged: depthGap < -DEPTH_TOLERANCE_RATIO },
+      kneeValgus: { flagged: kneeValgusSeverity !== "ok", severity: kneeValgusSeverity },
+      backRounding: { flagged: backRoundingSeverity !== "ok", severity: backRoundingSeverity },
+      depth: { flagged: depthSeverity !== "ok", severity: depthSeverity },
       bottomLandmarks: usable[bottomIdx].landmarks,
     };
   });

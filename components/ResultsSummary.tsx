@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 import Disclaimer from "@/components/Disclaimer";
 import MomentPreview, { type MomentPreviewHandle } from "@/components/MomentPreview";
 import { COACHING_TIPS, COACHING_TIPS_DISCLAIMER } from "@/lib/coachingTips";
-import type { AnalysisOutcome, RepAnalysis } from "@/lib/squatAnalysis";
+import type { AnalysisOutcome, RepAnalysis, Severity } from "@/lib/squatAnalysis";
 
 interface ResultsSummaryProps {
   outcome: AnalysisOutcome;
@@ -151,17 +151,17 @@ function ResultsWithMoments({
             <div className="grid grid-cols-3 gap-2">
               <CheckCell
                 label={CHECK_LABELS.knee}
-                flagged={rep.kneeValgus.flagged}
+                severity={rep.kneeValgus.severity}
                 onViewMoment={videoUrl ? () => handleViewMoment(rep) : undefined}
               />
               <CheckCell
                 label={CHECK_LABELS.back}
-                flagged={rep.backRounding.flagged}
+                severity={rep.backRounding.severity}
                 onViewMoment={videoUrl ? () => handleViewMoment(rep) : undefined}
               />
               <CheckCell
                 label={CHECK_LABELS.depth}
-                flagged={rep.depth.flagged}
+                severity={rep.depth.severity}
                 onViewMoment={videoUrl ? () => handleViewMoment(rep) : undefined}
               />
             </div>
@@ -180,37 +180,49 @@ function ResultsWithMoments({
   );
 }
 
+const SEVERITY_BADGE: Record<Severity, { label: string; className: string }> = {
+  ok: {
+    label: "תקין",
+    className:
+      "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300",
+  },
+  mild: {
+    label: "סטייה קלה",
+    className:
+      "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300",
+  },
+  significant: {
+    label: "סטייה משמעותית",
+    className: "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300",
+  },
+};
+
 function CheckCell({
   label,
-  flagged,
+  severity,
   onViewMoment,
 }: {
   label: string;
-  flagged: boolean;
+  severity: Severity;
   onViewMoment?: () => void;
 }) {
+  const badge = SEVERITY_BADGE[severity];
   return (
     <div className="flex flex-col items-center gap-1.5 text-center">
       <span className="text-xs text-foreground/70">{label}</span>
-      {flagged ? (
-        <>
-          <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-1 text-xs font-medium text-red-800 dark:bg-red-950 dark:text-red-300">
-            סומן
-          </span>
-          {onViewMoment && (
-            <button
-              type="button"
-              onClick={onViewMoment}
-              className="text-[11px] text-blue-600 underline hover:text-blue-800 dark:text-blue-400"
-            >
-              צפה ברגע הזה
-            </button>
-          )}
-        </>
-      ) : (
-        <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2.5 py-1 text-xs font-medium text-green-800 dark:bg-green-950 dark:text-green-300">
-          תקין
-        </span>
+      <span
+        className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ${badge.className}`}
+      >
+        {badge.label}
+      </span>
+      {severity !== "ok" && onViewMoment && (
+        <button
+          type="button"
+          onClick={onViewMoment}
+          className="text-[11px] text-blue-600 underline hover:text-blue-800 dark:text-blue-400"
+        >
+          צפה ברגע הזה
+        </button>
       )}
     </div>
   );
